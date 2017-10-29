@@ -30,23 +30,63 @@ class WaypointUpdater(object):
 
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
+	#rospy.Subscriber('/traffic_waypoint',
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
 
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
-
-        # TODO: Add other member variables you need below
+	self.yaw = 0
+	self.x = 0
+	self.y = 0
+	self.waypoints = None
 
         rospy.spin()
 
     def pose_cb(self, msg):
-        # TODO: Implement
-        pass
+	#rospy.logerr("Pose: " + str(msg))
+	siny = 2 * msg.pose.orientation.w * msg.pose.orientation.z
+	cosy = 1 - 2 * msg.pose.orientation.z * msg.pose.orientation.z
+	yaw = math.atan2(siny, cosy);
+	#rospy.logerr("Yaw: " + str(yaw))
+	self.yaw = yaw
+	self.x = msg.pose.position.x
+	self.y = msg.pose.position.y
+
+	if self.waypoints is None:
+	    return
+
+	min_distance = 1e+10
+	nearest_waypoint = 0
+
+	for i in range(len(self.waypoints)):
+	    x = self.waypoints[i].pose.pose.position.x
+	    y = self.waypoints[i].pose.pose.position.y
+	    d = (x-self.x)**2 + (y-self.y)**2
+	    if d < min_distance:
+		min_distance = d
+		nearest_waypoint = i
+
+	#for i in range(10):
+	#    rospy.logerr(str(i-5) + " "  + str(self.waypoints[nearest_waypoint+i-5].pose.pose.position))
+
+	#rospy.logerr("x = " + str(self.x) + " y = " + str(self.y) + " wp = " + str(self.waypoints[nearest_wayp].pose.pose.position))
+
+	theta = math.atan2(self.waypoints[nearest_waypoint].pose.pose.position.y - self.y, self.waypoints[nearest_waypoint].pose.pose.position.x - self.x)
+	if abs(theta - yaw) > (math.pi/2):
+	    nearest_waypoint = (nearest_waypoint + 1) % len(self.waypoints)
+
+	wp = nearest_waypoint
+	final_waypoints = []
+	for i in range(LOOKAHEAD_WPS):
+	    final_waypoints.append(self.waypoints[wp])
+	    wp = (wp + 1) % len(self.waypoints)
+
+	self.publish(final_waypoints)
+	#rospy.logerr("Publish " + str(len(final_waypoints)) + " waypoints with first wp is " + str(nearest_waypoint))
 
     def waypoints_cb(self, waypoints):
-        # TODO: Implement
-        pass
+	self.waypoints = waypoints.waypoints
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
@@ -69,6 +109,13 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def publish(self, final_waypoints):
+	lane = Lane()
+	lane.header.frame_id = '/final_waypoints'
+	lane.header.stamp = rospy.Time(0)
+	lane.waypoints = final_waypoints
+	self.final_waypoints_pub.publish(lane)
 
 
 if __name__ == '__main__':
