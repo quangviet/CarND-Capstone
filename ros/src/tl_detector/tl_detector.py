@@ -11,11 +11,18 @@ import tf
 import cv2
 import yaml
 
+from keras.models import load_model
+import tensorflow
+
 STATE_COUNT_THRESHOLD = 3
 
 class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
+
+	self.model = load_model('model.h5')
+	self.model._make_predict_function()
+	self.graph = tensorflow.get_default_graph()
 
         self.pose = None
         self.waypoints = None
@@ -71,6 +78,13 @@ class TLDetector(object):
         self.has_image = True
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
+
+
+	img = self.bridge.imgmsg_to_cv2(self.camera_image, 'rgb8')
+	img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+	with self.graph.as_default():
+	    pred = self.model.predict(img[None,:])[0].argmax()
+	rospy.logerr("Predict " + str(pred))
 
         '''
         Publish upcoming red lights at camera frequency.
