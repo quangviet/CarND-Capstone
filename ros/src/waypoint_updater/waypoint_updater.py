@@ -22,6 +22,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
+last_closest_waypoint = -1
 
 
 class WaypointUpdater(object):
@@ -37,16 +38,29 @@ class WaypointUpdater(object):
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
+        self.current_pos = None
+        self.base_waypoints = None
 
         rospy.spin()
 
     def pose_cb(self, msg):
         # TODO: Implement
-        pass
+        self.current_pos = msg
+        # Get closest waypoint
+        if self.base_waypoints is not None:
+            closest_waypoint = self.get_closest_waypoint(self.base_waypoints, self.current_pos)
+            #rospy.logerr('closest_waypoint: %d', closest_waypoint)
+            if closest_waypoint > -1:
+                # publish LOOKAHEAD_WPS waypoints
+                message = Lane()
+                for i in range(LOOKAHEAD_WPS):
+                    waypoint = self.base_waypoints[closest_waypoint+i]
+                    message.waypoints.append(waypoint)
+                self.final_waypoints_pub.publish(message)
 
-    def waypoints_cb(self, waypoints):
+    def waypoints_cb(self, lane):
         # TODO: Implement
-        pass
+        self.base_waypoints = lane.waypoints
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
@@ -69,6 +83,33 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def distance2(self, pos1, pos2):
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+        return dl(pos1.pose.position, pos2.pose.position)
+
+    def angular(self, next_pos, current_pos):
+        theta = math.atan2(next_pos.pose.position.y - current_pos.pose.position.y,
+                            next_pos.pose.position.x - current_pos.pose.position.x)
+        theta -= current_pos.pose.orientation.z
+        return theta
+
+    def get_closest_waypoint(self, waypoints, pos):
+        global last_closest_waypoint
+        closestLen = 100 #large number
+        closestWaypoint = -1
+        for i in range(len(waypoints)):
+            if last_closest_waypoint > -1: # Already have last closest waypoint
+                if i < last_closest_waypoint or i > last_closest_waypoint+LOOKAHEAD_WPS: # Just find in LOOKAHEAD_WPS
+                    continue
+            dist = self.distance2(waypoints[i].pose, pos)
+            if (dist < closestLen):
+                theta = self.angular(waypoints[i].pose, pos)
+                if theta < math.pi/4.0:
+                    closestLen = dist
+                    closestWaypoint = i
+        last_closest_waypoint = closestWaypoint
+        return closestWaypoint
 
 
 if __name__ == '__main__':
