@@ -100,7 +100,7 @@ def getImage(batch_data_path):
     return img
 
 # input  1 x batch_size
-# output 2 x batch_size
+# output 3 x batch_size
 def generator(samples, batch_size=32):
     num_samples = len(samples)
 
@@ -129,6 +129,8 @@ def generator(samples, batch_size=32):
                 augmented_states.append(state)
                 # append augmented data
                 augmented_images.append(cv2.flip(image,1))
+                augmented_states.append(state)
+                augmented_images.append(cv2.flip(image,0))
                 augmented_states.append(state)
 
             X_train = np.array(augmented_images)
@@ -209,8 +211,8 @@ def createNewModel():
 
 def main():
     model = None
-    batch_size_val = 2
-    num_epochs = 5
+    batch_size_val = 3
+    num_epochs = 20
 
     ### Read all driving log from all folder
     samples = getAllSamples(data_paths)
@@ -222,8 +224,8 @@ def main():
     train_samples, validation_samples = train_test_split(samples, test_size=0.3)
 
     ### Create training set and validation set
-    train_generator = generator(train_samples, batch_size=int(batch_size_val/2))
-    validation_generator = generator(validation_samples, batch_size=int(batch_size_val/2))
+    train_generator = generator(train_samples, batch_size=int(batch_size_val/3))
+    validation_generator = generator(validation_samples, batch_size=int(batch_size_val/3))
 
     ### Define model
     if os.path.exists(model_file_path) == True: # Load old model
