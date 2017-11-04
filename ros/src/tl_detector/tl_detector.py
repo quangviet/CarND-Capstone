@@ -11,6 +11,7 @@ import tf
 import cv2
 import yaml
 import math
+import time
 
 STATE_COUNT_THRESHOLD = 3
 LOOKAHEAD_WPS = 200
@@ -45,7 +46,7 @@ class TLDetector(object):
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
         self.bridge = CvBridge()
-        self.light_classifier = TLClassifier()
+        self.light_classifier = TLClassifier('light_classification/model.h5')
         self.listener = tf.TransformListener()
 
         self.state = TrafficLight.UNKNOWN
@@ -80,6 +81,10 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
+        # Collect data for training
+        #cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        #output_name = "light_classification/training_data/cv_image_" + time.strftime("%Y%m%d-%H%M%S") + ".png"
+        #cv2.imwrite(output_name, cv_image)
         light_wp, state = self.process_traffic_lights()
 
         '''
@@ -162,8 +167,13 @@ class TLDetector(object):
             return TrafficLight.UNKNOWN
 
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        # Show data for debugging
         #cv2.imshow("cv_image", cv_image)
         #cv2.waitKey(0)
+
+        # Collect data for training
+        #output_name = "light_classification/training_data/cv_image_" + time.strftime("%Y%m%d-%H%M%S") + ".png"
+        #cv2.imwrite(output_name, cv_image)
 
         #Get classification
         return self.light_classifier.get_classification(cv_image)
