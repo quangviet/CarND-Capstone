@@ -4,9 +4,10 @@ import h5py
 from keras import __version__ as keras_version
 import cv2
 import tensorflow as tf
+import numpy as np
 
-IMG_COLS = 200
-IMG_ROWS = 66
+IMG_COLS = 160
+IMG_ROWS = 120
 
 class TLClassifier(object):
     def __init__(self, model_path):
@@ -29,10 +30,8 @@ class TLClassifier(object):
             self.graph = tf.get_default_graph()
 
     def pre_processing(self, img):
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        height, width, channels = img.shape
-        crop_img = img[int(height/4):height-25, 0:width]
-        scale_img = cv2.resize(crop_img, (IMG_COLS, IMG_ROWS))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        scale_img = cv2.resize(img, (IMG_COLS, IMG_ROWS))
         return scale_img
 
     def get_classification(self, image):
@@ -50,6 +49,9 @@ class TLClassifier(object):
         if self.model:
             image = self.pre_processing(image)
             with self.graph.as_default():
-                state = int(self.model.predict(image[None, :, :, :], batch_size=1))
+                result = self.model.predict(image[None, :, :, :], batch_size=1)
+                state = np.argmax(result)
+                if state == 3:
+                    state = 4
         return state
 

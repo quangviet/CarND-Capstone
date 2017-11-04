@@ -33,22 +33,26 @@ data_0 = './training_data/red/'
 data_1 = './training_data/yellow/'
 data_2 = './training_data/green/'
 data_4 = './training_data/unknown/'
-data_paths = [data_0, data_1, data_2, './', data_4]
+data_paths = [data_0, data_1, data_2, data_4]
 
 model_file_path = 'model.h5'
-IMG_COLS = 200
-IMG_ROWS = 66
+IMG_COLS = 160
+IMG_ROWS = 120
 IMG_CH = 3
 
 def getAllSamples(data_paths):
     print('Get All Samples')
     samples = []
-    for i in range(5):
-        if i != 3:
-            print('    From data path ' + data_paths[i])
-            paths = os.listdir(data_paths[i])
-            for path in paths:
-                samples.append([data_paths[i] + path, i])
+    for i in range(4):
+        print('    From data path ' + data_paths[i])
+        label = [0, 0, 0, 0]
+        label[i] = 1
+        state = i
+        if state == 3:
+            state = 4
+        paths = os.listdir(data_paths[i])
+        for path in paths:
+            samples.append([data_paths[i] + path, label, state])
     print('Total samples: ' + str(len(samples)))
     return samples
 
@@ -56,7 +60,7 @@ def visualation_data(samples):
     print('Start Visualation data')
     start = datetime.datetime.now()
 
-    sample_values = [x[1] for x in samples] # get all states
+    sample_values = [x[2] for x in samples] # get all states
 
     visual = collections.Counter(sample_values)
     ord_dict = collections.OrderedDict(sorted(visual.items()))
@@ -86,10 +90,8 @@ def visualation_data(samples):
     print('Finish Visualation data in %d ms' %elapsed_ms)
 
 def pre_processing(img):
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    height, width, channels = img.shape
-    crop_img = img[int(height/4):height-25, 0:width]
-    scale_img = cv2.resize(crop_img, (IMG_COLS, IMG_ROWS))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    scale_img = cv2.resize(img, (IMG_COLS, IMG_ROWS))
     return scale_img
 
 def getImage(batch_data_path):
@@ -143,38 +145,38 @@ def createNewModel():
         # Normalization
         model.add(Lambda(lambda x: x / 255.0 - 0.5,
                         input_shape=(IMG_ROWS,IMG_COLS,IMG_CH)))
-        # Cropping
+        # Resize
         print(model.output_shape)
-        # 66x200@3
+        # 120x160@3
 
         # Architecture
         model.add(Convolution2D(filters=24,kernel_size=(5,5),strides=2))
         model.add(ELU())
         model.add(Dropout(0.3))
-        print(model.output_shape) # 31x98@24
+        print(model.output_shape) # 58x78@24
 
         model.add(Convolution2D(filters=36,kernel_size=(5,5),strides=2))
         model.add(ELU())
         model.add(Dropout(0.3))
-        print(model.output_shape) # 14x47@36
+        print(model.output_shape) # 27x37@36
 
         model.add(Convolution2D(filters=48,kernel_size=(5,5),strides=2))
         model.add(ELU())
         model.add(Dropout(0.3))
-        print(model.output_shape) # 5x22@48
+        print(model.output_shape) # 12x17@48
 
-        model.add(Convolution2D(filters=64,kernel_size=(3,3)))
+        model.add(Convolution2D(filters=64,kernel_size=(5,5)))
         model.add(ELU())
         model.add(Dropout(0.2))
-        print(model.output_shape) # 3x20@64
+        print(model.output_shape) # 8x13@64
 
-        model.add(Convolution2D(filters=64,kernel_size=(3,3)))
+        model.add(Convolution2D(filters=64,kernel_size=(5,5)))
         model.add(ELU())
         model.add(Dropout(0.2))
-        print(model.output_shape) # 1x18@64
+        print(model.output_shape) # 4x9@64
 
         model.add(Flatten())
-        print(model.output_shape) # 1152
+        print(model.output_shape) # 2304
 
         # default: activation=None
         model.add(Dense(100))
@@ -192,7 +194,7 @@ def createNewModel():
         model.add(Dropout(0.3))
         print(model.output_shape)
 
-        model.add(Dense(1))
+        model.add(Dense(4))
         model.add(ELU())
         print(model.output_shape)
 
@@ -202,7 +204,7 @@ def createNewModel():
               '[ERROR] Doesn''s support Keras version ' + keras_version +
               '\033[00m')
 
-    # 27 million connections and 250 thousand parameters.
+    # 482,140 parameters.
     return model
 
 def main():
