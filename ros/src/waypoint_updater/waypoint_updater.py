@@ -3,6 +3,7 @@
 import rospy
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
+from std_msgs.msg import Int32
 
 import math
 
@@ -22,8 +23,9 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-last_closest_waypoint = -1
-
+last_closest_wp = -1
+ONE_MPH = 0.44704
+MAX_SPEED = 40*ONE_MPH # mph
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -33,37 +35,49 @@ class WaypointUpdater(object):
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
 
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
-        self.current_pos = None
-        self.base_waypoints = None
+        self.pose = None
+        self.waypoints = None
+        self.light_wp = -1
 
         rospy.spin()
 
     def pose_cb(self, msg):
         # TODO: Implement
-        self.current_pos = msg
+        self.pose = msg
         # Get closest waypoint
-        if self.base_waypoints is not None:
-            closest_waypoint = self.get_closest_waypoint(self.base_waypoints, self.current_pos)
-            #rospy.logerr('closest_waypoint: %d', closest_waypoint)
-            if closest_waypoint > -1:
-                # publish LOOKAHEAD_WPS waypoints
-                message = Lane()
-                for i in range(LOOKAHEAD_WPS):
-                    waypoint = self.base_waypoints[closest_waypoint+i]
-                    message.waypoints.append(waypoint)
-                self.final_waypoints_pub.publish(message)
+        closest_wp = self.get_closest_waypoint(self.pose)
+        #rospy.logerr('closest_wp: %d :: light_wp: %d', closest_wp, self.light_wp)
+        if closest_wp > -1:
+            # publish LOOKAHEAD_WPS waypoints
+            message = Lane()
+            for i in range(LOOKAHEAD_WPS):
+                # Get waypoints from base_waypoints
+                waypoint = self.waypoints[closest_wp+i]
+                # Update linear velocity base on light_wp
+                wp_speed = 0.0
+                if self.light_wp > -1 and self.light_wp < closest_wp+LOOKAHEAD_WPS/2:
+                    wp_speed = MAX_SPEED*(self.light_wp-(closest_wp+i))/100
+                else:
+                    wp_speed = MAX_SPEED
+                waypoint.twist.twist.linear.x = wp_speed
+                message.waypoints.append(waypoint)
+                if wp_speed == 0.0:
+                    break # break for loop
+            self.final_waypoints_pub.publish(message)
 
     def waypoints_cb(self, lane):
         # TODO: Implement
-        self.base_waypoints = lane.waypoints
+        self.waypoints = lane.waypoints
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
+        self.light_wp = msg.data
         pass
 
     def obstacle_cb(self, msg):
@@ -94,22 +108,23 @@ class WaypointUpdater(object):
         theta -= current_pos.pose.orientation.z
         return theta
 
-    def get_closest_waypoint(self, waypoints, pos):
-        global last_closest_waypoint
-        closestLen = 100 #large number
-        closestWaypoint = -1
-        for i in range(len(waypoints)):
-            if last_closest_waypoint > -1: # Already have last closest waypoint
-                if i < last_closest_waypoint or i > last_closest_waypoint+LOOKAHEAD_WPS: # Just find in LOOKAHEAD_WPS
-                    continue
-            dist = self.distance2(waypoints[i].pose, pos)
-            if (dist < closestLen):
-                theta = self.angular(waypoints[i].pose, pos)
-                if theta < math.pi/4.0:
-                    closestLen = dist
-                    closestWaypoint = i
-        last_closest_waypoint = closestWaypoint
-        return closestWaypoint
+    def get_closest_waypoint(self, pose):
+        global last_closest_wp
+        closest_len = 100 #large number
+        closest_wp = -1
+        if (self.waypoints):
+            for i in range(len(self.waypoints)):
+                if last_closest_wp > -1: # Already have last closest waypoint
+                    if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS: # Just find in LOOKAHEAD_WPS
+                        continue
+                dist = self.distance2(self.waypoints[i].pose, pose)
+                if (dist < closest_len):
+                    theta = self.angular(self.waypoints[i].pose, pose)
+                    if theta < math.pi/4.0:
+                        closest_len = dist
+                        closest_wp = i
+        last_closest_wp = closest_wp
+        return closest_wp
 
 
 if __name__ == '__main__':
