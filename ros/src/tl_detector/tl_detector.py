@@ -81,11 +81,16 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
-        # Collect data for training
-        #cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-        #output_name = "light_classification/training_data/cv_image_" + time.strftime("%Y%m%d-%H%M%S") + ".png"
-        #cv2.imwrite(output_name, cv_image)
         light_wp, state = self.process_traffic_lights()
+        # Collect data for training
+        '''
+        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        time_str = time.strftime("%Y%m%d-%H%M%S")
+        output_name = "light_classification/training_data/cv_image_" + time_str + ".png"
+        if light_wp == -1:
+            output_name = "light_classification/training_data/unknown/cv_image_" + time_str + ".png"
+        cv2.imwrite(output_name, cv_image)
+        '''
 
         '''
         Publish upcoming red lights at camera frequency.
@@ -167,13 +172,6 @@ class TLDetector(object):
             return TrafficLight.UNKNOWN
 
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-        # Show data for debugging
-        #cv2.imshow("cv_image", cv_image)
-        #cv2.waitKey(0)
-
-        # Collect data for training
-        #output_name = "light_classification/training_data/cv_image_" + time.strftime("%Y%m%d-%H%M%S") + ".png"
-        #cv2.imwrite(output_name, cv_image)
 
         #Get classification
         return self.light_classifier.get_classification(cv_image)
