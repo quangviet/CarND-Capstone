@@ -30,7 +30,7 @@ class TLClassifier(object):
             self.graph = tf.get_default_graph()
 
     def pre_processing(self, img):
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
         scale_img = cv2.resize(img, (IMG_COLS, IMG_ROWS))
         return scale_img
 

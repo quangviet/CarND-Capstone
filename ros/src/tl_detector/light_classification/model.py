@@ -1,4 +1,4 @@
-########################## Capstone Project ##########################
+############################### Capstone Project ###############################
 __author__ = "Vuong Le"
 __email__ = "lelordoftech@gmail.com"
 __date__ = "04-Nov-2017"
@@ -90,7 +90,7 @@ def visualation_data(samples):
     print('Finish Visualation data in %d ms' %elapsed_ms)
 
 def pre_processing(img):
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
     scale_img = cv2.resize(img, (IMG_COLS, IMG_ROWS))
     return scale_img
 
