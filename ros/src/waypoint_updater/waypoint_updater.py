@@ -25,7 +25,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 last_closest_wp = -1
 ONE_MPH = 0.44704
-MAX_SPEED = 40*ONE_MPH # mph
+MAX_SPEED = 39.5*ONE_MPH # mps
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -56,19 +56,30 @@ class WaypointUpdater(object):
         if closest_wp > -1:
             # publish LOOKAHEAD_WPS waypoints
             message = Lane()
+            len_wps = len(self.waypoints)
             for i in range(LOOKAHEAD_WPS):
+                wp_id = closest_wp+i
+                if wp_id >= len_wps:
+                    break # Stop car
+
                 # Get waypoints from base_waypoints
-                waypoint = self.waypoints[closest_wp+i]
+                waypoint = self.waypoints[wp_id]
+
                 # Update linear velocity base on light_wp
                 wp_speed = 0.0
-                if self.light_wp > -1 and self.light_wp < closest_wp+LOOKAHEAD_WPS/2:
-                    wp_speed = MAX_SPEED*(self.light_wp-(closest_wp+i))/100
+                if self.light_wp > -1 and self.light_wp < closest_wp+LOOKAHEAD_WPS:
+                    wp_speed = MAX_SPEED*(self.light_wp-wp_id-4)/100
                 else:
                     wp_speed = MAX_SPEED
-                waypoint.twist.twist.linear.x = wp_speed
+
+                if wp_id < len_wps-LOOKAHEAD_WPS: # Don't need to update speed when closed goal
+                    waypoint.twist.twist.linear.x = wp_speed
+
+                if wp_speed <= 0.00001:
+                    break # break loop for
+
                 message.waypoints.append(waypoint)
-                if wp_speed == 0.0:
-                    break # break for loop
+
             self.final_waypoints_pub.publish(message)
 
     def waypoints_cb(self, lane):
@@ -78,7 +89,6 @@ class WaypointUpdater(object):
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
         self.light_wp = msg.data
-        pass
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
@@ -105,7 +115,16 @@ class WaypointUpdater(object):
     def angular(self, next_pos, current_pos):
         theta = math.atan2(next_pos.pose.position.y - current_pos.pose.position.y,
                             next_pos.pose.position.x - current_pos.pose.position.x)
-        theta -= current_pos.pose.orientation.z
+        sin_yaw = 2*current_pos.pose.orientation.w*current_pos.pose.orientation.z
+        cos_yaw = 1.0 - 2*current_pos.pose.orientation.z**2
+        yaw = math.atan2(sin_yaw, cos_yaw)
+        theta -= yaw
+
+        if theta > math.pi:
+            theta -= 2*math.pi
+        if theta < -math.pi:
+            theta += 2*math.pi
+
         return theta
 
     def get_closest_waypoint(self, pose):
@@ -120,10 +139,11 @@ class WaypointUpdater(object):
                 dist = self.distance2(self.waypoints[i].pose, pose)
                 if (dist < closest_len):
                     theta = self.angular(self.waypoints[i].pose, pose)
-                    if theta < math.pi/4.0:
+                    if abs(theta) < math.pi/4.0:
                         closest_len = dist
                         closest_wp = i
         last_closest_wp = closest_wp
+        #rospy.logerr('closest_wp: %d :: closest_len: %f :: light_wp: %d', closest_wp, closest_len, self.light_wp)
         return closest_wp
 
 
