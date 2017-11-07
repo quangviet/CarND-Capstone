@@ -13,6 +13,8 @@ import yaml
 import math
 import time
 
+DEBUG_MODE = True
+
 STATE_COUNT_THRESHOLD = 3
 LOOKAHEAD_WPS = 200
 last_closest_wp = -1
@@ -85,6 +87,12 @@ class TLDetector(object):
         # Collect data for training
         '''
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+
+        cv2.namedWindow('cv_image', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('cv_image', 320, 240)
+        cv2.imshow("cv_image", cv_image)
+        cv2.waitKey(1)
+
         time_str = time.strftime("%Y%m%d-%H%M%S")
         output_name = "light_classification/training_data/cv_image_" + time_str + ".png"
         if light_wp == -1:
@@ -103,7 +111,9 @@ class TLDetector(object):
             self.state = state
         elif self.state_count >= STATE_COUNT_THRESHOLD:
             self.last_state = self.state
-            light_wp = light_wp if state == TrafficLight.RED else -1
+            #light_wp = light_wp if state == TrafficLight.RED else -1
+            if state != TrafficLight.RED:
+                light_wp = -1
             self.last_wp = light_wp
             self.upcoming_red_light_pub.publish(Int32(light_wp))
         else:
@@ -198,7 +208,8 @@ class TLDetector(object):
             if len(stop_line_ways) == 0: # Just need update 1 time
                 # List of positions that correspond to the line to stop in front of for a given intersection
                 '''
-                292 : 753 : 2047 : 2580 : 6294 : 7008 : 8540 : 9733
+                Stop Line Way 292 : 753 : 2047 : 2580 : 6294 : 7008 : 8540 : 9733
+                Traffic Light 318 : 784 : 2095 : 2625 : 6322 : 7036 : 8565 : 8565
                 '''
                 stop_line_positions = self.config['stop_line_positions']
                 for stop_line_position in stop_line_positions:
@@ -208,21 +219,39 @@ class TLDetector(object):
                     stop_line_way = self.get_closest_light_waypoint(pose)
                     stop_line_ways.append(stop_line_way)
 
-            # Find closest_vis_light
-            closest_vis_light = car_position+LOOKAHEAD_WPS
+            # Find closest_stop_line
+            closest_stop_line = car_position+LOOKAHEAD_WPS
             for stop_line_way in stop_line_ways:
                 if stop_line_way > car_position and stop_line_way < car_position+LOOKAHEAD_WPS:
-                    if stop_line_way < closest_vis_light:
-                        closest_vis_light = stop_line_way
+                    if stop_line_way < closest_stop_line:
+                        closest_stop_line = stop_line_way
 
-            if closest_vis_light < car_position+LOOKAHEAD_WPS:
-                light_wp = closest_vis_light
+            if closest_stop_line < car_position+LOOKAHEAD_WPS:
+                light_wp = closest_stop_line
 
             #rospy.logerr('car_wp: %d :: light_wp: %d', car_position, light_wp)
+
         if light_wp > -1:
-            state = self.get_light_state()
-            rospy.logerr('car_wp: %d :: light_wp: %d :: state: %d', car_position, light_wp, state)
+            predict_state = TrafficLight.UNKNOWN
+            #predict_state = self.get_light_state()
+            debug_state = TrafficLight.UNKNOWN
+            if DEBUG_MODE == True:
+                # Find closest_vis_light
+                closest_vis_light = car_position+LOOKAHEAD_WPS
+                for light in self.lights:
+                    vis_light_way = self.get_closest_light_waypoint(light.pose)
+                    if vis_light_way > car_position and vis_light_way < car_position+LOOKAHEAD_WPS:
+                        if vis_light_way < closest_vis_light:
+                            closest_vis_light = vis_light_way
+                            debug_state = light.state
+                state = debug_state
+            else:
+                state = predict_state
+
+            #rospy.logerr('car_wp: %d :: debug_state: %d :: predict_state: %d', car_position, debug_state, predict_state)
             return light_wp, state
+        #else:
+            #rospy.logerr('car_wp: %d', car_position)
 
         return -1, TrafficLight.UNKNOWN
 
