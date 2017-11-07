@@ -17,9 +17,9 @@ class Controller(object):
                   decel_limit, accel_limit, wheel_radius, wheel_base,
                   steer_ratio, max_lat_accel, max_steer_angle):
         # TODO: Implement
-        self.pid_th = PID(1, 0.0, 0.0, MIN_THROTTLE, MAX_THROTTLE)
+        self.pid_th = PID(1.8, 0.001, 0.01, MIN_THROTTLE, MAX_THROTTLE)
         self.pid_th.reset()
-        self.pid_br = PID(100, 0.0, 0.0, MIN_BRAKE, MAX_BRAKE)
+        self.pid_br = PID(200, 0.0, 0.0, MIN_BRAKE, MAX_BRAKE)
         self.pid_br.reset()
         self.yawController = YawController(wheel_base, steer_ratio,
                               MIN_SPEED, max_lat_accel, max_steer_angle)
@@ -27,15 +27,19 @@ class Controller(object):
     def control(self, linear_velocity, angular_velocity, current_velocity):
         # TODO: Change the arg, kwarg list to suit your needs
         # Return throttle, brake, steer
-        throttle = self.pid_th.step(linear_velocity-current_velocity,
-                                    SAMPLE_TIME)
-        if (linear_velocity < current_velocity):
-            brake = self.pid_br.step(current_velocity-linear_velocity,
-                                    SAMPLE_TIME)
-        else:
-            brake = 0.0
         steer = self.yawController.get_steering(linear_velocity,
                                                 angular_velocity,
                                                 current_velocity)
+        #rospy.logerr('steer %f', steer)
+        if (linear_velocity < current_velocity):
+            #rospy.logerr('linear_velocity %f : current_velocity %f', linear_velocity, current_velocity)
+            throttle = 0.0
+            brake = self.pid_br.step(current_velocity-linear_velocity,
+                                    SAMPLE_TIME)
+        else:
+            linear_velocity *= (1.0 - abs(steer)) # decrease velocity in curve road
+            throttle = self.pid_th.step(linear_velocity-current_velocity,
+                                    SAMPLE_TIME)
+            brake = 0.0
         return throttle, brake, steer
 

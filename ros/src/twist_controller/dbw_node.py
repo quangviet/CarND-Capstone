@@ -94,7 +94,8 @@ class DBWNode(object):
             brake = 0.0
             steer = 0.0
             if self.twist_cmd is not None:
-                throttle, brake, steer = self.controller.control(self.twist_cmd.twist.linear.x,
+                # Work around case twist.linear.x < 0
+                throttle, brake, steer = self.controller.control(abs(self.twist_cmd.twist.linear.x),
                                                                   self.twist_cmd.twist.angular.z,
                                                                   self.current_vel)
             if self.dbw_enabled is True:
