@@ -4,9 +4,10 @@ import rospy
 from std_msgs.msg import Bool
 from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
 from geometry_msgs.msg import TwistStamped
-import math
-
+from std_msgs.msg import Int32
 from twist_controller import Controller
+
+import math
 
 '''
 You can build this node only after you have built (or partially built) the `waypoint_updater` node.
@@ -69,10 +70,12 @@ class DBWNode(object):
         rospy.Subscriber('/current_velocity', TwistStamped, self.vel_cb)
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cb)
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
 
         self.current_vel = 0.0
         self.twist_cmd = None
         self.dbw_enabled = False
+        self.light_wp = -1
 
         self.loop()
 
@@ -85,6 +88,9 @@ class DBWNode(object):
     def dbw_cb(self, is_enable):
         self.dbw_enabled = is_enable.data
 
+    def traffic_cb(self, msg):
+        self.light_wp = msg.data
+
     def loop(self):
         rate = rospy.Rate(50) # 50Hz
         while not rospy.is_shutdown():
@@ -95,9 +101,13 @@ class DBWNode(object):
             steer = 0.0
             if self.twist_cmd is not None:
                 # Work around case twist.linear.x < 0
-                throttle, brake, steer = self.controller.control(abs(self.twist_cmd.twist.linear.x),
-                                                                  self.twist_cmd.twist.angular.z,
-                                                                  self.current_vel)
+                linear_velocity = abs(self.twist_cmd.twist.linear.x)
+                angular_velocity = self.twist_cmd.twist.angular.z
+                current_velocity = self.current_vel
+                throttle, brake, steer = self.controller.control(linear_velocity,
+                                                                angular_velocity,
+                                                                current_velocity,
+                                                                self.light_wp)
             if self.dbw_enabled is True:
                 self.publish(throttle, brake, steer)
             rate.sleep()
