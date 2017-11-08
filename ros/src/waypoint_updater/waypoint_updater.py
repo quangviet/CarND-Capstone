@@ -23,9 +23,11 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-last_closest_wp = -1
 ONE_MPH = 0.44704
 MAX_SPEED = 39.5*ONE_MPH # mps
+MIN_SPEED = 0.0
+last_closest_wp = -1
+last_wp_speed = 0.0
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -49,6 +51,7 @@ class WaypointUpdater(object):
 
     def pose_cb(self, msg):
         # TODO: Implement
+        global last_wp_speed
         self.pose = msg
         # Get closest waypoint
         closest_wp = self.get_closest_waypoint(self.pose)
@@ -57,6 +60,7 @@ class WaypointUpdater(object):
             # publish LOOKAHEAD_WPS waypoints
             message = Lane()
             len_wps = len(self.waypoints)
+            wp_speed = last_wp_speed
             for i in range(LOOKAHEAD_WPS):
                 wp_id = closest_wp+i
                 if wp_id >= len_wps:
@@ -66,11 +70,15 @@ class WaypointUpdater(object):
                 waypoint = self.waypoints[wp_id]
 
                 # Update linear velocity base on light_wp
-                wp_speed = 0.0
                 if self.light_wp > -1 and self.light_wp < closest_wp+LOOKAHEAD_WPS:
                     wp_speed = MAX_SPEED*(self.light_wp-wp_id-4)/100
                 else:
+                    wp_speed += 1.0/ONE_MPH
+
+                if wp_speed > MAX_SPEED:
                     wp_speed = MAX_SPEED
+                elif wp_speed < MIN_SPEED:
+                    wp_speed = MIN_SPEED
 
                 if wp_id < len_wps-LOOKAHEAD_WPS: # Don't need to update speed when closed goal
                     waypoint.twist.twist.linear.x = wp_speed
@@ -81,6 +89,7 @@ class WaypointUpdater(object):
                 message.waypoints.append(waypoint)
 
             self.final_waypoints_pub.publish(message)
+            last_wp_speed = wp_speed # backup the last waypoint speed
 
     def waypoints_cb(self, lane):
         # TODO: Implement
@@ -133,8 +142,13 @@ class WaypointUpdater(object):
         closest_wp = -1
         if (self.waypoints):
             for i in range(len(self.waypoints)):
-                if last_closest_wp > -1: # Already have last closest waypoint
-                    if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS: # Just find in LOOKAHEAD_WPS
+                if last_closest_wp > -1:
+                    '''
+                    Already have last closest waypoint
+                    Just find ahead in LOOKAHEAD_WPS waypoints
+                    Ignore other waypoints
+                    '''
+                    if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS:
                         continue
                 dist = self.distance2(self.waypoints[i].pose, pose)
                 if (dist < closest_len):
