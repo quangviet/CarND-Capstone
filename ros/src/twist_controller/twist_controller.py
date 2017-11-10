@@ -34,7 +34,7 @@ class Controller(object):
         if light_wp == -1:
             stop_at_red_light = False
         elif (light_wp > -1 and linear_velocity < current_velocity):
-           stop_at_red_light = True
+            stop_at_red_light = True
 
         throttle = 0.0
         brake = 0.0
@@ -49,7 +49,7 @@ class Controller(object):
                 # Don't need to throttle in case stop at red light
                 linear_velocity *= (1.0 - abs(steer)) # decrease velocity in curve road
                 throttle = self.pid_th.step(linear_velocity-current_velocity,
-                                    SAMPLE_TIME)
+                                            SAMPLE_TIME)
 
         return throttle, brake, steer
 

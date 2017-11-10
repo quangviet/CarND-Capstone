@@ -71,9 +71,9 @@ class WaypointUpdater(object):
 
                 # Update linear velocity base on light_wp
                 if self.light_wp > -1 and self.light_wp < closest_wp+LOOKAHEAD_WPS:
-                    wp_speed = MAX_SPEED*(self.light_wp-wp_id-4)/100
+                    wp_speed -= MAX_SPEED/10.0
                 else:
-                    wp_speed += 1.0/ONE_MPH
+                    wp_speed += MAX_SPEED/10.0
 
                 if wp_speed > MAX_SPEED:
                     wp_speed = MAX_SPEED

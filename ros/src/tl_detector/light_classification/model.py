@@ -142,7 +142,7 @@ def createNewModel():
     print('Create New Model')
     model = None
 
-    if (keras_version == b'2.0.9'):
+    if (keras_version == b'2.0.8'):
         model = Sequential()
         # Normalization
         model.add(Lambda(lambda x: x / 255.0 - 0.5,

@@ -16,7 +16,8 @@ import time
 DEBUG_MODE = True
 
 STATE_COUNT_THRESHOLD = 3
-LOOKAHEAD_WPS = 200
+LOOKAHEAD_WPS = 200 # wps
+DANGEROUS_ZONE = 40 # m
 last_closest_wp = -1
 stop_line_ways = []
 
@@ -120,9 +121,32 @@ class TLDetector(object):
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
 
+    def distance(self, waypoints, wp1, wp2):
+        dist = 0
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+        for i in range(wp1, wp2+1):
+            dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
+            wp1 = i
+        return dist
+
     def distance2(self, pos1, pos2):
         dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
         return dl(pos1.pose.position, pos2.pose.position)
+
+    def angular(self, next_pos, current_pos):
+        theta = math.atan2(next_pos.pose.position.y - current_pos.pose.position.y,
+                            next_pos.pose.position.x - current_pos.pose.position.x)
+        sin_yaw = 2*current_pos.pose.orientation.w*current_pos.pose.orientation.z
+        cos_yaw = 1.0 - 2*current_pos.pose.orientation.z**2
+        yaw = math.atan2(sin_yaw, cos_yaw)
+        theta -= yaw
+
+        if theta > math.pi:
+            theta -= 2*math.pi
+        if theta < -math.pi:
+            theta += 2*math.pi
+
+        return theta
 
     def get_closest_waypoint(self, pose):
         """Identifies the closest path waypoint to the given position
@@ -140,13 +164,20 @@ class TLDetector(object):
         closest_wp = -1
         if (self.waypoints):
             for i in range(len(self.waypoints)):
-                if last_closest_wp > -1: # Already have last closest waypoint
-                    if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS: # Just find in LOOKAHEAD_WPS
+                if last_closest_wp > -1:
+                    '''
+                    Already have last closest waypoint
+                    Just find ahead in LOOKAHEAD_WPS waypoints
+                    Ignore other waypoints
+                    '''
+                    if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS:
                         continue
                 dist = self.distance2(self.waypoints[i].pose, pose)
                 if (dist < closest_len):
-                    closest_len = dist
-                    closest_wp = i
+                    theta = self.angular(self.waypoints[i].pose, pose)
+                    if abs(theta) < math.pi/4.0:
+                        closest_len = dist
+                        closest_wp = i
         last_closest_wp = closest_wp
         return closest_wp
 
@@ -219,39 +250,46 @@ class TLDetector(object):
                     stop_line_way = self.get_closest_light_waypoint(pose)
                     stop_line_ways.append(stop_line_way)
 
-            # Find closest_stop_line
-            closest_stop_line = car_position+LOOKAHEAD_WPS
+            # Find dist_stop_line
+            dist_stop_line = DANGEROUS_ZONE
             for stop_line_way in stop_line_ways:
-                if stop_line_way > car_position and stop_line_way < car_position+LOOKAHEAD_WPS:
-                    if stop_line_way < closest_stop_line:
-                        closest_stop_line = stop_line_way
+                if stop_line_way > car_position:
+                    dist = self.distance(self.waypoints, car_position, stop_line_way)
+                    if dist < dist_stop_line:
+                        dist_stop_line = dist
+                        light_wp = stop_line_way
 
-            if closest_stop_line < car_position+LOOKAHEAD_WPS:
-                light_wp = closest_stop_line
-
-            #rospy.logerr('car_wp: %d :: light_wp: %d', car_position, light_wp)
+            '''
+            if light_wp > -1:
+                if dist_stop_line > DANGEROUS_ZONE-4:
+                    cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+                    time_str = time.strftime("%Y%m%d-%H%M%S")
+                    output_name = "light_classification/training_data/cv_image_" + time_str + ".png"
+                    cv2.imwrite(output_name, cv_image)
+            '''
 
         if light_wp > -1:
             predict_state = TrafficLight.UNKNOWN
             #predict_state = self.get_light_state()
             debug_state = TrafficLight.UNKNOWN
             if DEBUG_MODE == True:
-                # Find closest_vis_light
-                closest_vis_light = car_position+LOOKAHEAD_WPS
+                # Find dist_vis_light
+                # 20 is distance from stop_line to vis_light
+                dist_vis_light = DANGEROUS_ZONE+20
                 for light in self.lights:
                     vis_light_way = self.get_closest_light_waypoint(light.pose)
-                    if vis_light_way > car_position and vis_light_way < car_position+LOOKAHEAD_WPS:
-                        if vis_light_way < closest_vis_light:
-                            closest_vis_light = vis_light_way
+                    if vis_light_way > car_position:
+                        dist = self.distance(self.waypoints, car_position, vis_light_way)
+                        if dist < dist_vis_light:
+                            dist_vis_light = dist
                             debug_state = light.state
                 state = debug_state
             else:
                 state = predict_state
-
-            #rospy.logerr('car_wp: %d :: debug_state: %d :: predict_state: %d', car_position, debug_state, predict_state)
-            return light_wp, state
-        #else:
-            #rospy.logerr('car_wp: %d', car_position)
+            rospy.logerr('car_wp: %d :: light_wp: %d :: dist_stop_line: %f :: debug_state: %d :: predict_state: %d', car_position, light_wp, dist_stop_line, debug_state, predict_state)
+            return light_wp, TrafficLight.RED
+        else:
+            rospy.logerr('car_wp: %d', car_position)
 
         return -1, TrafficLight.UNKNOWN
 
