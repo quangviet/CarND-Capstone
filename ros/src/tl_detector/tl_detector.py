@@ -11,7 +11,6 @@ import tf
 import cv2
 import yaml
 import math
-import time
 
 DEBUG_MODE = True
 
@@ -20,6 +19,7 @@ LOOKAHEAD_WPS = 200 # wps
 DANGEROUS_ZONE = 40 # m
 last_closest_wp = -1
 stop_line_ways = []
+#img_count = 0
 
 class TLDetector(object):
     def __init__(self):
@@ -49,7 +49,7 @@ class TLDetector(object):
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
         self.bridge = CvBridge()
-        self.light_classifier = TLClassifier('light_classification/model.h5')
+        self.light_classifier = TLClassifier()
         self.listener = tf.TransformListener()
 
         self.state = TrafficLight.UNKNOWN
@@ -87,6 +87,7 @@ class TLDetector(object):
         light_wp, state = self.process_traffic_lights()
         # Collect data for training
         '''
+        global img_count
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
         cv2.namedWindow('cv_image', cv2.WINDOW_NORMAL)
@@ -94,10 +95,10 @@ class TLDetector(object):
         cv2.imshow("cv_image", cv_image)
         cv2.waitKey(1)
 
-        time_str = time.strftime("%Y%m%d-%H%M%S")
-        output_name = "light_classification/training_data/cv_image_" + time_str + ".png"
+        output_name = "light_classification/training_data/cv_image_" + str(img_count) + "_" + str(state) + ".png"
+        img_count += 1
         if light_wp == -1:
-            output_name = "light_classification/training_data/unknown/cv_image_" + time_str + ".png"
+            output_name = "light_classification/training_data/unknown/cv_image_" + str(img_count) + ".png"
         cv2.imwrite(output_name, cv_image)
         '''
 
@@ -212,7 +213,7 @@ class TLDetector(object):
             self.prev_light_loc = None
             return TrafficLight.UNKNOWN
 
-        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
 
         #Get classification
         return self.light_classifier.get_classification(cv_image)
@@ -269,8 +270,8 @@ class TLDetector(object):
             '''
 
         if light_wp > -1:
-            predict_state = TrafficLight.UNKNOWN
-            #predict_state = self.get_light_state()
+            #predict_state = TrafficLight.UNKNOWN
+            predict_state = self.get_light_state()
             debug_state = TrafficLight.UNKNOWN
             if DEBUG_MODE == True:
                 # Find dist_vis_light
@@ -283,11 +284,8 @@ class TLDetector(object):
                         if dist < dist_vis_light:
                             dist_vis_light = dist
                             debug_state = light.state
-                state = debug_state
-            else:
-                state = predict_state
             rospy.logerr('car_wp: %d :: light_wp: %d :: dist_stop_line: %f :: debug_state: %d :: predict_state: %d', car_position, light_wp, dist_stop_line, debug_state, predict_state)
-            return light_wp, TrafficLight.RED
+            return light_wp, predict_state
         else:
             rospy.logerr('car_wp: %d', car_position)
 

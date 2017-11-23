@@ -1,38 +1,22 @@
 from styx_msgs.msg import TrafficLight
-from keras.models import load_model
-import h5py
-from keras import __version__ as keras_version
-import cv2
+
+import timeit
 import tensorflow as tf
 import numpy as np
-
-IMG_COLS = 160
-IMG_ROWS = 120
+import rospy
 
 class TLClassifier(object):
-    def __init__(self, model_path):
-        #TODO load classifier
-        global keras_version
-        self.model = None
-        # check that model Keras version is same as local Keras version
-        f = h5py.File(model_path, mode='r')
-        model_version = f.attrs.get('keras_version')
-        keras_version = str(keras_version).encode('utf8')
+    def __init__(self):
+        detection_graph = tf.Graph()
+        with detection_graph.as_default():
+            od_graph_def = tf.GraphDef()
+            with tf.gfile.GFile('frozen_inference_graph.pb', 'rb') as fid:
+                serialized_graph = fid.read()
+                od_graph_def.ParseFromString(serialized_graph)
+                tf.import_graph_def(od_graph_def, name = '')
 
-        if model_version != keras_version:
-            print('\033[91m' +
-                  '[ERROR] You are using Keras version ' + keras_version +
-                  ', but the model was built using ' + model_version +
-                  '\033[00m')
-        else:
-            self.model = load_model(model_path)
-            self.model._make_predict_function() 
-            self.graph = tf.get_default_graph()
-
-    def pre_processing(self, img):
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
-        scale_img = cv2.resize(img, (IMG_COLS, IMG_ROWS))
-        return scale_img
+        self.graph = detection_graph 
+        self.sess = tf.Session(graph=self.graph)
 
     def get_classification(self, image):
         """Determines the color of the traffic light in the image
@@ -44,14 +28,33 @@ class TLClassifier(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        #TODO implement light color prediction
-        state = TrafficLight.UNKNOWN
-        if self.model:
-            image = self.pre_processing(image)
-            with self.graph.as_default():
-                result = self.model.predict(image[None, :, :, :], batch_size=1)
-                state = np.argmax(result)
-                if state == 3:
-                    state = 4
-        return state
+        pred = 0
+        highest_score = 0
 
+        # Definite input and output Tensors for detection_graph
+        image_tensor = self.graph.get_tensor_by_name('image_tensor:0')
+        detection_boxes = self.graph.get_tensor_by_name('detection_boxes:0')
+        detection_scores = self.graph.get_tensor_by_name('detection_scores:0')
+        detection_classes = self.graph.get_tensor_by_name('detection_classes:0')
+        num_detections = self.graph.get_tensor_by_name('num_detections:0')
+
+        # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
+        image_np_expanded = np.expand_dims(image, axis=0)
+
+        # Actual detection.
+        #start_time = timeit.default_timer()
+        (boxes, scores, classes, num) = self.sess.run([detection_boxes, detection_scores, detection_classes, num_detections],feed_dict={image_tensor: image_np_expanded})
+        for i in range(len(classes[0])):
+            if scores[0][i] > highest_score:
+                highest_score = scores[0][i]
+                pred = classes[0][i]
+        #rospy.logerr("Predict " +str(pred) + " Elasped: " + str(timeit.default_timer() - start_time))
+
+        if pred == 1:
+                return TrafficLight.RED
+        elif pred == 2:
+                return TrafficLight.YELLOW
+        elif pred == 3:
+                return TrafficLight.GREEN
+
+        return TrafficLight.UNKNOWN
