@@ -20,9 +20,8 @@ class Controller(object):
                   steer_ratio, max_lat_accel, max_steer_angle):
         # TODO: Implement
         self.pid_th = PID(1.8, 0.001, 0.01, MIN_THROTTLE, MAX_THROTTLE)
-        self.pid_th.reset()
         self.pid_br = PID(200, 0.0, 0.0, MIN_BRAKE, MAX_BRAKE)
-        self.pid_br.reset()
+        self.reset_pid()
         self.yawController = YawController(wheel_base, steer_ratio,
                               MIN_SPEED, max_lat_accel, max_steer_angle)
 
@@ -52,4 +51,8 @@ class Controller(object):
                                             SAMPLE_TIME)
 
         return throttle, brake, steer
+
+    def reset_pid(self):
+        self.pid_th.reset()
+        self.pid_br.reset()
 

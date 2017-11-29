@@ -12,7 +12,7 @@ import cv2
 import yaml
 import math
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 STATE_COUNT_THRESHOLD = 3
 LOOKAHEAD_WPS = 200 # wps
@@ -23,6 +23,8 @@ stop_line_ways = []
 
 class TLDetector(object):
     def __init__(self):
+        global stop_line_ways
+
         rospy.init_node('tl_detector')
 
         self.pose = None
@@ -57,6 +59,20 @@ class TLDetector(object):
         self.last_wp = -1
         self.state_count = 0
 
+        '''
+        Make stop_line_waypoint list
+        List of positions that correspond to the line to stop in front of for a given intersection
+        Stop Line Way 292 : 753 : 2047 : 2580 : 6294 : 7008 : 8540 : 9733
+        Traffic Light 318 : 784 : 2095 : 2625 : 6322 : 7036 : 8565 : 8565
+        '''
+        stop_line_positions = self.config['stop_line_positions']
+        for stop_line_position in stop_line_positions:
+            pose = PoseStamped()
+            pose.pose.position.x = stop_line_position[0];
+            pose.pose.position.y = stop_line_position[1];
+            stop_line_way = self.get_closest_light_waypoint(pose)
+            stop_line_ways.append(stop_line_way)
+
         rospy.spin()
 
     def pose_cb(self, msg):
@@ -85,6 +101,7 @@ class TLDetector(object):
         self.has_image = True
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
+
         # Collect data for training
         '''
         global img_count
@@ -108,6 +125,7 @@ class TLDetector(object):
         of times till we start using it. Otherwise the previous stable state is
         used.
         '''
+
         if self.state != state:
             self.state_count = 0
             self.state = state
@@ -184,7 +202,8 @@ class TLDetector(object):
 
     def get_closest_light_waypoint(self, pose):
         """Identifies the closest path waypoint to the given position
-            https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
+            Just find ahead in LOOKAHEAD_WPS waypoints
+            Ignore other waypoints
         Args:
             pose (Pose): position to match a waypoint to
 
@@ -196,6 +215,9 @@ class TLDetector(object):
         closest_wp = -1
         if (self.waypoints):
             for i in range(len(self.waypoints)):
+                if last_closest_wp > -1:
+                    if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS:
+                        continue
                 dist = self.distance2(self.waypoints[i].pose, pose)
                 if (dist < closest_len):
                     closest_len = dist
@@ -209,7 +231,7 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        if(not self.has_image):
+        if (not self.has_image):
             self.prev_light_loc = None
             return TrafficLight.UNKNOWN
 
@@ -228,33 +250,19 @@ class TLDetector(object):
 
         """
         global stop_line_ways
+
         light_wp = -1
         car_position = -1
 
-        if(self.pose):
+        if (self.pose):
             car_position = self.get_closest_waypoint(self.pose)
 
         #TODO find the closest visible traffic light (if one exists)
         if car_position > -1:
-            # Make stop_line_waypoint list
-            if len(stop_line_ways) == 0: # Just need update 1 time
-                # List of positions that correspond to the line to stop in front of for a given intersection
-                '''
-                Stop Line Way 292 : 753 : 2047 : 2580 : 6294 : 7008 : 8540 : 9733
-                Traffic Light 318 : 784 : 2095 : 2625 : 6322 : 7036 : 8565 : 8565
-                '''
-                stop_line_positions = self.config['stop_line_positions']
-                for stop_line_position in stop_line_positions:
-                    pose = PoseStamped()
-                    pose.pose.position.x = stop_line_position[0];
-                    pose.pose.position.y = stop_line_position[1];
-                    stop_line_way = self.get_closest_light_waypoint(pose)
-                    stop_line_ways.append(stop_line_way)
-
             # Find dist_stop_line
             dist_stop_line = DANGEROUS_ZONE
             for stop_line_way in stop_line_ways:
-                if stop_line_way > car_position:
+                if stop_line_way > car_position and stop_line_way < car_position + LOOKAHEAD_WPS:
                     dist = self.distance(self.waypoints, car_position, stop_line_way)
                     if dist < dist_stop_line:
                         dist_stop_line = dist
@@ -270,21 +278,22 @@ class TLDetector(object):
             '''
 
         if light_wp > -1:
-            #predict_state = TrafficLight.UNKNOWN
             predict_state = self.get_light_state()
-            debug_state = TrafficLight.UNKNOWN
             if DEBUG_MODE == True:
+                debug_state = TrafficLight.UNKNOWN
                 # Find dist_vis_light
                 # 20 is distance from stop_line to vis_light
                 dist_vis_light = DANGEROUS_ZONE+20
                 for light in self.lights:
                     vis_light_way = self.get_closest_light_waypoint(light.pose)
-                    if vis_light_way > car_position:
+                    if vis_light_way > car_position and vis_light_way < car_position + LOOKAHEAD_WPS:
                         dist = self.distance(self.waypoints, car_position, vis_light_way)
                         if dist < dist_vis_light:
                             dist_vis_light = dist
                             debug_state = light.state
-            rospy.logerr('car_wp: %d :: light_wp: %d :: dist_stop_line: %f :: debug_state: %d :: predict_state: %d', car_position, light_wp, dist_stop_line, debug_state, predict_state)
+                rospy.logerr('car_wp: %d :: light_wp: %d :: debug_state: %d :: predict_state: %d', car_position, light_wp, debug_state, predict_state)
+            else:
+                rospy.logerr('car_wp: %d :: light_wp: %d :: predict_state: %d', car_position, light_wp, predict_state)
             return light_wp, predict_state
         else:
             rospy.logerr('car_wp: %d', car_position)

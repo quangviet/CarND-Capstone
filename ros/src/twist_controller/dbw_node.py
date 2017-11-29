@@ -110,6 +110,8 @@ class DBWNode(object):
                                                                 self.light_wp)
             if self.dbw_enabled is True:
                 self.publish(throttle, brake, steer)
+            else:
+                self.controller.reset_pid() # restart PID controllers
             rate.sleep()
 
     def publish(self, throttle, brake, steer):

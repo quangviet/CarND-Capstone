@@ -6,6 +6,7 @@ from styx_msgs.msg import Lane, Waypoint
 from std_msgs.msg import Int32
 
 import math
+import copy
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -23,11 +24,9 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-ONE_MPH = 0.44704
-MAX_SPEED = 39.5*ONE_MPH # mps
-MIN_SPEED = 0.0
+MAX_SPEED = 40*1000/60/60 # mps
 last_closest_wp = -1
-last_wp_speed = 0.0
+MAX_DECEL = 1.0
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -38,7 +37,6 @@ class WaypointUpdater(object):
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
         rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
-
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
@@ -51,45 +49,32 @@ class WaypointUpdater(object):
 
     def pose_cb(self, msg):
         # TODO: Implement
-        global last_wp_speed
         self.pose = msg
+
         # Get closest waypoint
-        closest_wp = self.get_closest_waypoint(self.pose)
-        #rospy.logerr('closest_wp: %d :: light_wp: %d', closest_wp, self.light_wp)
-        if closest_wp > -1:
+        car_position = self.get_closest_waypoint(self.pose)
+
+        if car_position > -1:
             # publish LOOKAHEAD_WPS waypoints
             message = Lane()
             len_wps = len(self.waypoints)
-            wp_speed = last_wp_speed
             for i in range(LOOKAHEAD_WPS):
-                wp_id = closest_wp+i
+                wp_id = car_position+i
+                if self.light_wp > -1 and wp_id > self.light_wp-3:
+                    break # Stop car in front of the traffic light 3 wps
                 if wp_id >= len_wps:
-                    break # Stop car
-
-                # Get waypoints from base_waypoints
+                    break # Stop car when cross the end of road
                 waypoint = self.waypoints[wp_id]
-
-                # Update linear velocity base on light_wp
-                if self.light_wp > -1 and self.light_wp < closest_wp+LOOKAHEAD_WPS:
-                    wp_speed -= MAX_SPEED/10.0
-                else:
-                    wp_speed += MAX_SPEED/10.0
-
-                if wp_speed > MAX_SPEED:
-                    wp_speed = MAX_SPEED
-                elif wp_speed < MIN_SPEED:
-                    wp_speed = MIN_SPEED
-
-                if wp_id < len_wps-LOOKAHEAD_WPS: # Don't need to update speed when closed goal
-                    waypoint.twist.twist.linear.x = wp_speed
-
-                if wp_speed <= 0.00001:
-                    break # break loop for
-
                 message.waypoints.append(waypoint)
 
+            # Update velocity for wp
+            if len(message.waypoints) > 0:
+                if self.light_wp > -1:
+                    message.waypoints = self.decelerate(message.waypoints)
+                else:
+                    message.waypoints = self.accelerate(message.waypoints)
+
             self.final_waypoints_pub.publish(message)
-            last_wp_speed = wp_speed # backup the last waypoint speed
 
     def waypoints_cb(self, lane):
         # TODO: Implement
@@ -109,17 +94,9 @@ class WaypointUpdater(object):
     def set_waypoint_velocity(self, waypoints, waypoint, velocity):
         waypoints[waypoint].twist.twist.linear.x = velocity
 
-    def distance(self, waypoints, wp1, wp2):
-        dist = 0
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
-        for i in range(wp1, wp2+1):
-            dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
-            wp1 = i
-        return dist
-
-    def distance2(self, pos1, pos2):
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
-        return dl(pos1.pose.position, pos2.pose.position)
+    def distance(self, p1, p2):
+        x, y, z = p1.x - p2.x, p1.y - p2.y, p1.z - p2.z
+        return math.sqrt(x*x + y*y + z*z)
 
     def angular(self, next_pos, current_pos):
         theta = math.atan2(next_pos.pose.position.y - current_pos.pose.position.y,
@@ -150,15 +127,39 @@ class WaypointUpdater(object):
                     '''
                     if i < last_closest_wp or i > last_closest_wp+LOOKAHEAD_WPS:
                         continue
-                dist = self.distance2(self.waypoints[i].pose, pose)
+                dist = self.distance(self.waypoints[i].pose.pose.position, pose.pose.position)
                 if (dist < closest_len):
                     theta = self.angular(self.waypoints[i].pose, pose)
                     if abs(theta) < math.pi/4.0:
                         closest_len = dist
                         closest_wp = i
         last_closest_wp = closest_wp
-        #rospy.logerr('closest_wp: %d :: closest_len: %f :: light_wp: %d', closest_wp, closest_len, self.light_wp)
         return closest_wp
+
+    def accelerate(self, waypoints):
+        first = waypoints[0]
+        if first.twist.twist.linear.x < 1.0:
+            first.twist.twist.linear.x = 1.0
+        vel = first.twist.twist.linear.x
+        for wp in waypoints[1:]:
+            dist = self.distance(wp.pose.pose.position, first.pose.pose.position)
+            vel += math.sqrt(2 * MAX_DECEL * dist)
+            if vel > MAX_SPEED:
+                vel = MAX_SPEED
+                break # Don't need to increase velocity after get MAX_SPEED
+            wp.twist.twist.linear.x = min(vel, wp.twist.twist.linear.x)
+        return waypoints
+
+    def decelerate(self, waypoints):
+        last = waypoints[-1]
+        last.twist.twist.linear.x = 0.
+        for wp in waypoints[:-1][::-1]:
+            dist = self.distance(wp.pose.pose.position, last.pose.pose.position)
+            vel = math.sqrt(2 * MAX_DECEL * dist)
+            if vel < 1.:
+                vel = 0.
+            wp.twist.twist.linear.x = min(vel, wp.twist.twist.linear.x)
+        return waypoints
 
 
 if __name__ == '__main__':
